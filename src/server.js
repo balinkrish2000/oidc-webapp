@@ -43,11 +43,93 @@ app.get('/profile', (req, res) => {
 });
 
 app.get('/login', (req, res) => {
-  res.status(501).send();
+  // define constants for the authorization request
+  const authorizationEndpoint = oidcProviderInfo['authorization_endpoint'];
+  const responseType = 'id_token';
+  const scope = 'openid';
+  const clientID = process.env.CLIENT_ID;
+  const redirectUri =
+    'https://sturdy-broccoli-64q7gp9r46gf5qj7-3000.app.github.dev/callback';
+  const responseMode = 'form_post';
+  const nonce = crypto.randomBytes(16).toString('hex');
+  // define a signed cookie containing the nonce value
+  const options = {
+    maxAge: 1000 * 60 * 15,
+    httpOnly: true, // The cookie only accessible by the web server
+    signed: true // Indicates if the cookie should be signed
+  };
+  // add cookie to the response and issue a 302 redirecting user
+  res
+    .cookie(nonceCookie, nonce, options)
+    .redirect(
+      authorizationEndpoint +
+        '?response_mode=' +
+        responseMode +
+        '&response_type=' +
+        responseType +
+        '&scope=' +
+        scope +
+        '&client_id=' +
+        clientID +
+        '&redirect_uri=' +
+        redirectUri +
+        '&nonce=' +
+        nonce
+    );
 });
 
 app.post('/callback', async (req, res) => {
-  res.status(501).send();
+  // take nonce from cookie
+  const nonce = req.signedCookies[nonceCookie];
+
+  // delete nonce
+  delete req.signedCookies[nonceCookie];
+
+  // take ID token posted by the user
+  const { id_token } = req.body;
+
+  // decode token
+  const decodedToken = jwt.decode(id_token, { complete: true });
+
+  // get key id
+  const kid = decodedToken.header.kid;
+
+  // get public key
+  const client = jwksClient({
+    jwksUri: oidcProviderInfo['jwks_uri']
+  });
+
+  client.getSigningKey(kid, (err, key) => {
+    const signingKey = key.publicKey || key.rsaPublicKey;
+
+    // verify signature & decoded token
+    const verifiedToken = jwt.verify(id_token, signingKey);
+
+    // check audience, nonce, and expiration time
+    const {
+      nonce: decodedNonce,
+      aud: audience,
+      exp: expirationDate,
+      iss: issuer
+    } = verifiedToken;
+    const currentTime = Math.floor(Date.now() / 1000);
+    const expectedAudience = process.env.CLIENT_ID;
+    if (
+      audience !== expectedAudience ||
+      decodedNonce !== nonce ||
+      expirationDate < currentTime ||
+      issuer !== oidcProviderInfo['issuer']
+    ) {
+      // send an authorized http status
+      return res.status(401).send();
+    }
+
+    req.session.decodedIdToken = verifiedToken;
+    req.session.idToken = id_token;
+
+    // send the decoded version of the ID token
+    res.redirect('/profile');
+  });
 });
 
 app.get('/to-dos', async (req, res) => {
@@ -58,6 +140,17 @@ app.get('/remove-to-do/:id', async (req, res) => {
   res.status(501).send();
 });
 
-app.listen(3000, () => {
-  console.log(`Server running on http://localhost:3000`);
-});
+const { OIDC_PROVIDER } = process.env;
+const discEnd = `https://${OIDC_PROVIDER}/.well-known/openid-configuration`;
+request(discEnd)
+  .then(res => {
+    oidcProviderInfo = JSON.parse(res);
+    app.listen(3000, () => {
+      console.log(`Server running on http://localhost:3000`);
+    });
+  })
+  .catch(error => {
+    console.error(error);
+    console.error('Unable to get OIDC endpoints for ${OIDC_PROVIDER}');
+    process.exit(1);
+  });
