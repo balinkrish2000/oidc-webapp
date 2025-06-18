@@ -4,7 +4,8 @@
   "description": "OpenID Connect Handbook: Securing Regular Web Apps",
   "main": "index.js",
   "scripts": {
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js"
   },
   "keywords": [
     "OpenID Connect",
@@ -26,6 +27,7 @@
     "jsonwebtoken": "^8.5.1",
     "jwks-rsa": "^1.6.0",
     "lint-staged": "^8.2.1",
+    "nodemon": "^3.1.10",
     "passport": "^0.4.0",
     "passport-auth0": "^1.1.0",
     "prettier": "^1.18.2",

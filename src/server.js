@@ -17,7 +17,7 @@ let oidcProviderInfo;
 
 const app = express();
 
-app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.urlencoded({ extended: false }));
 app.use(cookieParser(crypto.randomBytes(16).toString('hex')));
 app.use(
   session({
@@ -29,6 +29,11 @@ app.use(
 app.engine('handlebars', handlebars());
 app.set('view engine', 'handlebars');
 app.set('views', path.join(__dirname, 'views'));
+
+app.use((req, res, next) => {
+  console.log('Incoming:', req.method, req.url);
+  next();
+});
 
 app.get('/', (req, res) => {
   res.render('index');
@@ -46,7 +51,7 @@ app.get('/login', (req, res) => {
   // define constants for the authorization request
   const authorizationEndpoint = oidcProviderInfo['authorization_endpoint'];
   const responseType = 'id_token';
-  const scope = 'openid';
+  const scope = 'openid profile email';
   const clientID = process.env.CLIENT_ID;
   const redirectUri =
     'https://sturdy-broccoli-64q7gp9r46gf5qj7-3000.app.github.dev/callback';
@@ -81,6 +86,8 @@ app.get('/login', (req, res) => {
 app.post('/callback', async (req, res) => {
   // take nonce from cookie
   const nonce = req.signedCookies[nonceCookie];
+
+  console.log('inside callback');
 
   // delete nonce
   delete req.signedCookies[nonceCookie];
@@ -145,8 +152,8 @@ const discEnd = `https://${OIDC_PROVIDER}/.well-known/openid-configuration`;
 request(discEnd)
   .then(res => {
     oidcProviderInfo = JSON.parse(res);
-    app.listen(3000, () => {
-      console.log(`Server running on http://localhost:3000`);
+    app.listen(3000, '0.0.0.0', () => {
+      console.log(`Server running`);
     });
   })
   .catch(error => {
